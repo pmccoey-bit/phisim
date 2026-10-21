@@ -1,0 +1,48 @@
+PHISIM UNIVERSITY QUALIFICATION FORM SUBMISSIONS
+
+In PowerShell:
+cd "C:\Users\PeggyPC\OneDrive\phisim\scholarship playbook\Step 2 Validate Schools"
+py -m pip install openpyxl python-docx
+py .\02B_update_phisim_qualification_form.py --serve
+
+Open http://127.0.0.1:8768/ in your browser. Keep PowerShell running while using
+the form. Close the tracking workbook in Excel before submitting. Ctrl+C stops
+the server. If the port is occupied, add --port 8774 and use that port in the URL.
+Opening index.html directly or the public chatgpt.site link cannot write to the
+local workbook. This server accepts requests only on this computer. A hosted
+submission service and a workbook synchronization mechanism would be required
+for recipients on other computers to submit through the public link.
+
+After completing the form, select Review application, then Submit for review.
+Success is displayed only after the tracking workbook has been saved. If the
+workbook is open, close it and retry. Unmatched or duplicate university names are
+rejected without changing any university row. Match University name to the
+Member-Organization value exactly, ignoring capitalization and extra spaces.
+For example, use "Temple University, CIS" if that is the spreadsheet value.
+
+The server updates University Qualification Tracking requirements.xlsx, tab
+Current evaluation checklist. It writes the degree programs to Major, marks
+Received university materials with the submission time, and adds columns for
+the submitted school/college, accreditation webpage, faculty name and email,
+full-time status, academic membership, academic year, and all three graduate
+counts. It preserves the member contact columns, evaluation dates, approval,
+board review, result, and notification fields. No university rows are added.
+Academic-year columns follow the latest schedule deadline year.
+The row's Submission review status is set to Submitted for review. The form
+shows a saving message while processing and confirms the submission only after
+the workbook save succeeds. The committee reviews submissions in that workbook.
+
+Each workbook save gets a timestamped .submission-backup-YYYYMMDD-...xlsx copy.
+Repeated delivery of the same submission does not write a second copy. Different
+responses for the same university update that university's row. The updated
+02A checklist builder retains submitted fields when refreshing the same cycle.
+
+Update the saved local form without starting the server:
+py .\02B_update_phisim_qualification_form.py
+
+Preview annual form changes without saving:
+py .\02B_update_phisim_qualification_form.py --dry-run
+
+Use --workbook "C:\path\tracking.xlsx" to select another workbook, or --form-dir
+"C:\path\form folder" to select another saved form folder. The checklist and
+the form must have the same scholarship year.

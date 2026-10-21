@@ -1,0 +1,40 @@
+PERSONALIZED QUALIFICATION FORMS
+
+02D_qualification_email.py now reads each highlighted Current evaluation checklist
+row and creates a separate personalized web form link in that school's email.
+University name comes directly from Member - Organization. School/college comes
+from Department/Program (or the previously submitted school, when available).
+Faculty name comes from First Name + Last Name, and Faculty email from Member
+Email. Previously submitted faculty details take precedence when available.
+
+Known program titles, accreditation URL, full-time faculty and SIM membership
+answers, and graduate counts for the displayed academic years are also filled.
+Missing information stays blank. No qualifications or approvals are inferred.
+All pre-filled answers remain editable, and users must review them before
+submitting. The annual 02B form updater retains this feature for future years.
+Browser drafts are kept separate by university and scholarship cycle.
+
+From Step 2 Validate Schools, preview the emails without saving or sending:
+py .\02A_create_current_evaluation_checklist.py --emails-only --prepare-emails --dry-run
+
+Prepare fresh personalized email files in a separate preview folder:
+py .\02A_create_current_evaluation_checklist.py --emails-only --prepare-emails --email-output "Personalized Email Previews"
+
+Send future messages using the normal send log (previously sent schools skipped):
+py .\02A_create_current_evaluation_checklist.py --emails-only --send-emails
+
+Do not change --email-output when sending merely to bypass the send log. The six
+2027 emails already sent have not been resent or changed. Newly prepared .eml
+copies are in 2027 Personalized Qualification Emails.
+
+Personalized links include only the school-specific pre-filled information in
+the URL fragment; it is readable by whoever receives that link. Share each
+school's link only with its intended contacts. No school contact directory was
+added to the public website. Each link uses a snapshot of the workbook row when
+the email is generated, so regenerate it if the checklist details change.
+
+The public form supports pre-filling and completed-form downloads. Writing to
+the local Excel workbook still requires the local server from 02B:
+py .\02B_update_phisim_qualification_form.py --serve
+Use the personalized link's #prefill=... suffix with the server address when
+working locally. Remote workbook submissions require a hosted submission service.
