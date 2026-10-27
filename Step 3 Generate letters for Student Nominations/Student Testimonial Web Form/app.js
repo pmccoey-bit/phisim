@@ -1,0 +1,25 @@
+'use strict';
+// Dates: latest 2027 PHISIM Scholarship Process Dates.docx.
+// The source form's graduation-class restriction is retained separately.
+const SETTINGS={year:2027,deadline:'Friday, February 26, 2027',ceremony:'Tuesday, April 6, 2027',excludedGraduatingClass:2027,recipient:'mccoey@lasalle.edu'};
+document.querySelectorAll('[data-year]').forEach(e=>e.textContent=SETTINGS.year);
+document.querySelector('#deadline').textContent=SETTINGS.deadline;
+document.querySelector('#ceremony').textContent=SETTINGS.ceremony;
+document.querySelector('#eligibility').textContent=`Must not be a member of the graduating class of ${SETTINGS.excludedGraduatingClass} to qualify for the scholarship.`;
+document.title=`PHISIM ${SETTINGS.year} Student Information and Testimonial`;
+const form=document.querySelector('#testimonial-form'),dialog=document.querySelector('#review-dialog'),story=document.querySelector('#story'),counter=document.querySelector('#word-count'),status=document.querySelector('#delivery-status');
+const fields=[['studentName','Student name'],['university','University and school / department'],['graduation','Expected graduation date'],['personalEmail','Personal email address'],['universityEmail','University email address'],['phone','Student cell phone number'],['release','Photo and testimonial promotional release'],['attendance',`Attendance: ${SETTINGS.ceremony}`],['headshot','Professional-style JPEG headshot already submitted'],['testimonial','My testimonial'],['signature','Signature'],['signatureDate','Date']];
+function wordCount(value){return value.trim()?value.trim().split(/\s+/u).length:0;}
+function updateCount(){const count=wordCount(story.value);counter.textContent=`${count} ${count===1?'word':'words'} · aim for 100–150`;counter.classList.toggle('in-range',count>=100&&count<=150);}
+story.addEventListener('input',updateCount);
+function values(){return Object.fromEntries(Array.from(new FormData(form),([key,value])=>[key,String(value).trim()]));}
+function display(key,value){if(key==='graduation'&&/^\d{4}-\d{2}$/.test(value)){const [y,m]=value.split('-').map(Number);return new Date(y,m-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'});}return value;}
+function responseText(){const data=values();return `PHISIM ${SETTINGS.year} Scholarship Awardee\nStudent Information and Testimonial\n\n`+fields.map(([key,label])=>`${label}:\n${display(key,data[key]||'')}`).join('\n\n')+`\n\nPhoto and testimonial release statement:\nI agree that SIM and PHISIM can use my photo and testimonial in promotional material.\nResponse: ${data.release}\n\nReturn to Margaret McCoey at ${SETTINGS.recipient}.\n` ;}
+form.addEventListener('submit',event=>{event.preventDefault();for(const element of form.querySelectorAll('input:not([type=radio]),textarea')){if(element.type!=='month'&&element.type!=='date')element.value=element.value.trim();}if(!form.reportValidity())return;const data=values(),list=document.querySelector('#review-details');list.replaceChildren();for(const [key,label] of fields){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=display(key,data[key]||'');list.append(dt,dd);}status.textContent='';dialog.showModal();});
+document.querySelector('#close-review').addEventListener('click',()=>dialog.close());
+document.querySelector('#download').addEventListener('click',()=>{const blob=new Blob([responseText()],{type:'text/plain;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`PHISIM-${SETTINGS.year}-Testimonial-${values().studentName.replace(/[^a-z0-9]+/gi,'-').slice(0,70)||'Student'}.txt`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);status.textContent='Your completed response has been downloaded. Attach it to your email, along with your JPEG headshot if needed.';});
+document.querySelector('#copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(responseText());status.textContent='Your response is copied. Paste it into an email to Margaret McCoey.';}catch{status.textContent='Copy is unavailable in this browser. Download the response or use Print / save PDF instead.';}});
+document.querySelector('#print').addEventListener('click',()=>{document.body.classList.add('review-print');window.print();});
+window.addEventListener('afterprint',()=>document.body.classList.remove('review-print'));
+document.querySelector('#email').addEventListener('click',()=>{const subject=`PHISIM ${SETTINGS.year} Student Testimonial — ${values().studentName}`;const body=responseText();window.location.href=`mailto:${SETTINGS.recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;status.textContent='An email draft was requested in your email app. Review it, attach your JPEG headshot if needed, and click Send there. This page has not sent your response. If your email app does not open, download or copy the response and email it to '+SETTINGS.recipient+'.';});
+updateCount();
