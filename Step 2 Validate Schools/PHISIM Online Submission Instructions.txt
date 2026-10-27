@@ -1,0 +1,33 @@
+PHISIM ONLINE QUALIFICATION SUBMISSIONS
+
+The public form now has a SUBMIT for Review to PHISIM button on the review page.
+It saves each response online and confirms receipt for PHISIM review. The review
+button remains visible while the answers scroll. Personalized school links and
+the deadline continue to work.
+
+The workbook synchronization process copies queued online responses into the
+matching Current evaluation checklist row in University Qualification Tracking
+requirements.xlsx. University name must match Member-Organization, ignoring
+capitalization and repeated spaces. A missing or duplicate match stops that
+save. Board decisions and unrelated university rows are preserved.
+
+Keep the workbook CLOSED in Excel when synchronizing. If it cannot be saved,
+the online submission stays queued and is retried later. The online form remains
+available when this computer is off; queued responses synchronize when the
+program starts again. Each successful workbook save creates a backup.
+
+To run the local form and synchronize online responses every 30 seconds:
+cd "C:\Users\PeggyPC\OneDrive\phisim\scholarship playbook\Step 2 Validate Schools"
+py .\02B_update_phisim_qualification_form.py --serve --port 8781
+
+To synchronize once and exit:
+py .\02B_update_phisim_qualification_form.py --sync-public
+
+PHISIM Submission Sync.json stores a Windows-protected synchronization credential.
+Only the Windows user who created it can decrypt it. Keep the file beside 02B.
+It is not served publicly or included in email. Reconfigure the credential if
+moving the program to a different computer or Windows account.
+
+Receipt in the public form is not a board approval. The checklist's Submission
+review status becomes Submitted for review when synchronized. Committee review,
+approval, result, and notification remain separate actions in the workbook.

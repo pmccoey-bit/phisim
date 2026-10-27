@@ -33,12 +33,27 @@ import tempfile
 import os
 import secrets
 import threading
+import ctypes
+from urllib.request import Request, urlopen
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from zipfile import ZipFile
 
 
 TITLE = 'PHISIM University Qualification Form'
+WORKBOOK_WRITE_LOCK = threading.RLock()
+REVIEW_DIALOG_CSS = '''
+/* PHISIM visible review actions v1 */
+@media screen {
+ dialog[open]{display:flex;flex-direction:column;height:min(90vh,900px);overflow:hidden}
+ .dialog-header{flex:0 0 auto;margin-bottom:12px}
+ #review-content{flex:1 1 auto;min-height:70px;overflow-y:auto;padding-right:10px}
+ dialog>.hint,dialog>#submission-status,dialog>#download-status{flex:0 0 auto}
+ .dialog-actions{flex:0 0 auto;margin-top:12px}
+ #submit-to-checklist{flex-basis:100%;width:100%}
+ button:disabled{cursor:default;opacity:.7}
+}
+'''
 SCHEDULE_FOLDER = 'Step 1  Generate Scholarship Dates and Request for Nominations'
 VERSION = re.compile(r'^(\d{4})\s+PHISIM Scholarship Process Dates\.(docx|xlsx)$', re.I)
 DATE_PATTERN = re.compile(r'\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})\b', re.I)
@@ -91,7 +106,7 @@ SUBMISSION_JS = r'''// PHISIM checklist submission v1
 let submissionConfig=null, submissionKey=null, submittedSignature=null;
 const submitButton=document.querySelector('#submit-to-checklist');
 const submitStatus=document.querySelector('#submission-status');
-form.addEventListener('input',()=>{if(submittedSignature&&JSON.stringify(data())!==submittedSignature){submitButton.disabled=false;submitButton.textContent='Submit for review';submitStatus.textContent='Your changes have not been submitted.';}});
+form.addEventListener('input',()=>{if(submittedSignature&&JSON.stringify(data())!==submittedSignature){submitButton.disabled=false;submitButton.textContent='SUBMIT for Review to PHISIM';submitStatus.textContent='Your changes have not been submitted.';}});
 submitButton.addEventListener('click',async()=>{
  trimValues();if(!form.reportValidity()){dialog.close();return;}
  const response=data(), signature=JSON.stringify(response);
@@ -113,7 +128,7 @@ submitButton.addEventListener('click',async()=>{
   submittedSignature=signature;
   submitStatus.textContent=`Your information for ${saved.university} has been saved and submitted for PHISIM review.`;
  }catch(error){submitStatus.textContent=error.message||'The response was not saved. Please try again.';}
- finally{submitButton.removeAttribute('aria-busy');submitButton.disabled=submittedSignature===signature;submitButton.textContent=submittedSignature===signature?'Submitted for review':'Submit for review';}
+ finally{submitButton.removeAttribute('aria-busy');submitButton.disabled=submittedSignature===signature;submitButton.textContent=submittedSignature===signature?'Submitted for review':'SUBMIT for Review to PHISIM';}
 });
 // End PHISIM checklist submission
 '''
@@ -131,6 +146,7 @@ def install_submission(html, js):
     html = html.replace('Submit application', 'Submit for review')
     html = html.replace('Review your responses, then select Submit for review to save them to the university evaluation checklist.',
                         'Review your submission and click on the SUBMIT for Review to PHISIM')
+    html = html.replace('Submit for review', 'SUBMIT for Review to PHISIM')
     js = js.replace('This document has not been submitted online. Send it to your PHISIM contact for review. Questions: president@phisim.org.',
                     'Use Submit application in the web form to save your responses to the PHISIM checklist. A downloaded copy alone does not submit the application. Questions: president@phisim.org.')
     js = js.replace('Use Submit application in the web form', 'Use Submit for review in the web form')
@@ -181,6 +197,11 @@ def validate_submission(payload, year):
 
 
 def save_submission(workbook_path, payload, year):
+    with WORKBOOK_WRITE_LOCK:
+        return _save_submission(workbook_path, payload, year)
+
+
+def _save_submission(workbook_path, payload, year):
     """Update exactly one existing university, keeping review decisions intact."""
     import openpyxl
     from copy import copy
@@ -271,6 +292,44 @@ def save_submission(workbook_path, payload, year):
         book.close()
         if temporary:
             temporary.unlink(missing_ok=True)
+
+
+def read_sync_configuration(path):
+    config = json.loads(Path(path).read_text(encoding='utf-8-sig'))
+    parsed = urlsplit(config['url'])
+    if parsed.scheme != 'https' or parsed.hostname != 'phisim-university-qualification.righttune7.chatgpt.site':
+        raise ValueError('Sync URL must be the PHISIM qualification site over HTTPS.')
+    class Blob(ctypes.Structure):
+        _fields_ = [('size', ctypes.c_ulong), ('data', ctypes.POINTER(ctypes.c_ubyte))]
+    raw = bytes.fromhex(config['protectedToken'])
+    buffer = (ctypes.c_ubyte * len(raw)).from_buffer_copy(raw)
+    incoming, outgoing = Blob(len(raw), buffer), Blob()
+    if not ctypes.windll.crypt32.CryptUnprotectData(ctypes.byref(incoming), None, None, None, None, 0, ctypes.byref(outgoing)):
+        raise OSError('The sync credential can only be opened by the Windows user who created it.')
+    try:
+        token = ctypes.string_at(outgoing.data, outgoing.size).decode('utf-16-le')
+    finally:
+        ctypes.windll.kernel32.LocalFree(outgoing.data)
+    return config['url'].rstrip('/'), token
+
+
+def sync_public_submissions(args, year):
+    base, token = read_sync_configuration(args.sync_config)
+    headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json',
+               'User-Agent': 'PHISIM-Workbook-Sync/1.0'}
+    with urlopen(Request(base + '/api/review-sync', headers=headers), timeout=30) as reply:
+        items = json.load(reply)['submissions']
+    count = 0
+    for item in items:
+        # Acknowledgment is sent only after an atomic, verified workbook save.
+        save_submission(args.workbook, item['payload'], year)
+        acknowledgment = json.dumps({'id': item['id'], 'workbookSaved': True}).encode('utf-8')
+        with urlopen(Request(base + '/api/review-sync', data=acknowledgment, headers=headers), timeout=30) as reply:
+            if not json.load(reply).get('acknowledged'):
+                raise ValueError('The workbook was saved but acknowledgment was not confirmed. A retry is safe.')
+        count += 1
+        print(f'Online submission saved for review: {item["payload"]["university"]}', flush=True)
+    return count
 
 
 def submission_server(args, year):
@@ -501,7 +560,11 @@ def transform(args, source, due):
     if 'ACADEMIC PARTNERS' in html.upper() or statement not in js or TITLE not in html:
         raise ValueError('Updated form failed verification. No files saved.')
     html, js = install_submission(html, install_prefill(js))
-    return {'index.html': html.encode('utf-8'), 'app.js': js.encode('utf-8'), logo_name: logo_data}, statement
+    css = (args.form_dir / 'style.css').read_text(encoding='utf-8')
+    if 'PHISIM visible review actions v1' not in css:
+        css = css.rstrip() + '\n' + REVIEW_DIALOG_CSS
+    return {'index.html': html.encode('utf-8'), 'app.js': js.encode('utf-8'),
+            'style.css': css.encode('utf-8'), logo_name: logo_data}, statement
 
 
 def run(args):
@@ -558,6 +621,8 @@ def main():
     parser.add_argument('--port', type=int, default=8768, help='Local submission server port (default: 8768).')
     parser.add_argument('--workbook', type=Path, default=folder / 'University Qualification Tracking requirements.xlsx',
                         help='Workbook to update when the local form is submitted.')
+    parser.add_argument('--sync-public', action='store_true', help='Copy queued public form submissions to the matching workbook rows, then exit.')
+    parser.add_argument('--sync-config', type=Path, default=folder / 'PHISIM Submission Sync.json', help='Windows-protected public submission sync configuration.')
     args = parser.parse_args()
     if args.serve and args.dry_run:
         parser.error('--serve cannot be combined with --dry-run')
@@ -565,17 +630,33 @@ def main():
         parser.error('--port must be from 1 to 65535')
     try:
         run(args)
+        if args.sync_public:
+            _, due = select_schedule(args)
+            count = sync_public_submissions(args, due.year)
+            print(f'Online submissions synchronized: {count}')
         if args.serve:
             _, due = select_schedule(args)
             server = submission_server(args, due.year)
             print(f'Open the form: http://127.0.0.1:{server.server_port}/', flush=True)
             print(f'Submissions update: {args.workbook}', flush=True)
             print('Keep this window running. Press Ctrl+C to stop.', flush=True)
+            sync_stop = threading.Event()
+            if args.sync_config.exists():
+                def sync_loop():
+                    while not sync_stop.is_set():
+                        try:
+                            sync_public_submissions(args, due.year)
+                        except Exception as error:
+                            print(f'Online submission sync will retry: {error}', flush=True)
+                        sync_stop.wait(30)
+                threading.Thread(target=sync_loop, daemon=True).start()
+                print('Public submissions sync to the workbook every 30 seconds while this server runs.', flush=True)
             try:
                 server.serve_forever()
             except KeyboardInterrupt:
                 print('\nSubmission server stopped.')
             finally:
+                sync_stop.set()
                 server.server_close()
     except ImportError as error:
         parser.exit(1, f'{error}\nInstall dependencies with: py -m pip install openpyxl python-docx\n')
